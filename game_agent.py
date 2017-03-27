@@ -6,8 +6,6 @@ augment the test suite with your own test cases to further test your code.
 You must test your agent's strength against a set of agents with known
 relative strength using tournament.py and include the results in your report.
 """
-import random
-
 
 class Timeout(Exception):
     """Subclass base exception for code clarity."""
@@ -36,15 +34,8 @@ def custom_score(game, player):
     float
         The heuristic value of the current game state to the specified player.
     """
-    if game.is_loser(player):
-            return float("-inf")
-
-    if game.is_winner(player):
-        return float("inf")
-
-    own_moves = set(game.get_legal_moves(player))
-    opp_moves = set(game.get_legal_moves(game.get_opponent(player)))
-    return float(len(own_moves.intersection(opp_moves)))
+    score = float(len(game.get_legal_moves(player)))
+    return score
 
 
 class CustomPlayer:
@@ -123,31 +114,31 @@ class CustomPlayer:
         """
 
         self.time_left = time_left
-        next_move = (-1, -1)
+        center = (game.width - 1) / 2, (game.height - 1) / 2
 
         if not legal_moves:
-            return next_move
-        elif len(legal_moves) == 1:
-            return legal_moves[0]
+            return (-1, -1)
+        else:
+            next_move = legal_moves[0]
+
+        method = self.minimax if self.method == 'minimax' else self.alphabeta
 
         if self.iterative:
-            current_lvl = 1
+            depth = 1
             while True:
                 try:
-                    if self.method == 'minimax':
-                        _, next_move = self.minimax(game, current_lvl, True)
-                    if self.method == 'alphabeta':
-                        _, next_move = self.alphabeta(game, current_lvl, True)
-                    current_lvl += 1
+                    score, next_move = method(game, depth)
+                    if time_left() <= self.TIMER_THRESHOLD:
+                        return next_move
+                    depth += 1
+
                 except Timeout:
                     return next_move
         else:
             try:
-                if self.method == 'minimax':
-                    _, next_move = self.minimax(game, self.search_depth, True)
-                if self.method == 'alphabeta':
-                    _, next_move = self.alphabeta(game, self.search_depth, True)
+                score, next_move = method(game, self.search_depth)
                 return next_move
+
             except Timeout:
                 return next_move
 
@@ -186,23 +177,17 @@ class CustomPlayer:
         if self.time_left() <= self.TIMER_THRESHOLD:
             raise Timeout()
 
-        if maximizing_player:
-            player = game.active_player
-            best_score = float('-inf')
-        else:
-            player = game.inactive_player
-            best_score = float('inf')
-
+        best_score = float('-inf') if maximizing_player else float('inf')
         best_move = (-1, -1)
         legal_moves = game.get_legal_moves()
 
         for move in legal_moves:
             try:
                 if depth == 1:
-                    score = self.score(game.forecast_move(move), player)
+                    score = self.score(game.forecast_move(move), self)
                 else:
-                    score, _ = self.minimax(game.forecast_move(move), depth - 1, not maximizing_player)
-
+                    score, _ = self.minimax(game.forecast_move(move),
+                                            depth - 1, not maximizing_player)
                 if maximizing_player:
                     if score > best_score:
                         best_score = score
@@ -258,45 +243,33 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
-        if maximizing_player:
-            player = game.active_player
-        else:
-            player = game.inactive_player
-
-        best_move = (-1, -1)
-        endgame = game.utility(player)
-        if endgame:
-            return endgame, best_move
-
         legal_moves = game.get_legal_moves()
 
-        for move in legal_moves:
-            try:
-                if depth == 1:
-                    score = self.score(game.forecast_move(move), player)
-                else:
-                    score, _ = self.alphabeta(game.forecast_move(move), depth - 1,
-                                              alpha, beta, not maximizing_player)
-                if maximizing_player:
-                    if score >= beta:
-                        return score, move
-                    if score > alpha:
-                        alpha = score
-                        best_move = move
-                else:
-                    if score <= alpha:
-                        return score, move
-                    if score < beta:
-                        beta = score
-                        best_move = move
-
-            except Timeout:
-                if maximizing_player:
-                    return alpha, best_move
-                else:
-                    return beta, best_move
-
         if maximizing_player:
-            return alpha, best_move
+            value = (float("-inf"), (-1, -1))
+            for move in legal_moves:
+                score = (self.score(game.forecast_move(move), self) if depth == 1
+                         else self.alphabeta(game.forecast_move(move), depth - 1,
+                         alpha, beta, not maximizing_player)[0], move)
+
+                value = max([value, score], key=lambda x: x[0])
+                alpha = max(alpha, value[0])
+
+                if alpha >= beta:
+                    break
+
+            return value
+
         else:
-            return beta, best_move
+            value = (float("inf"), (-1, -1))
+            for move in legal_moves:
+                score = (self.score(game.forecast_move(move), self) if depth == 1
+                         else self.alphabeta(game.forecast_move(move), depth - 1,
+                         alpha, beta, not maximizing_player)[0], move)
+                value = min([value, score], key=lambda x: x[0])
+                beta = min(beta, value[0])
+
+                if beta <= alpha:
+                    break
+
+        return value
