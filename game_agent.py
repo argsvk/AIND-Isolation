@@ -6,6 +6,14 @@ augment the test suite with your own test cases to further test your code.
 You must test your agent's strength against a set of agents with known
 relative strength using tournament.py and include the results in your report.
 """
+import logging
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+                    filename='performance.log',
+                    filemode='a+')
+logger = logging.getLogger('game_agent')
+
 
 class Timeout(Exception):
     """Subclass base exception for code clarity."""
@@ -34,8 +42,16 @@ def custom_score(game, player):
     float
         The heuristic value of the current game state to the specified player.
     """
-    score = float(len(game.get_legal_moves(player)))
-    return score
+    if game.is_loser(player):
+        return float("-inf")
+
+    if game.is_winner(player):
+        return float("inf")
+
+    op_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    my_moves = len(game.get_legal_moves(player))
+
+    return 2 * my_moves - op_moves
 
 
 class CustomPlayer:
@@ -77,6 +93,21 @@ class CustomPlayer:
         self.method = method
         self.time_left = None
         self.TIMER_THRESHOLD = timeout
+        self.reflect = False
+        self.hash_table = [None] * 509
+
+    def mirror(self, game, player):
+        opponent = game.get_opponent(player)
+        i, j = game.get_player_location(opponent)
+        mirror_move = (game.height - 1 - i, game.width - 1 - j)
+
+        return mirror_move
+
+    def hash_function(self, game):
+        h = hash(game.to_string())
+        ix = h % 509
+
+        return int(ix)
 
     def get_move(self, game, legal_moves, time_left):
         """Search for the best move from the available legal moves and return a
@@ -114,11 +145,36 @@ class CustomPlayer:
         """
 
         self.time_left = time_left
-        center = (game.width - 1) / 2, (game.height - 1) / 2
+        center = (game.width - 1) // 2, (game.height - 1) // 2
 
         if not legal_moves:
             return (-1, -1)
+        elif len(legal_moves) == 1:
+            return legal_moves[0]
+        elif center in legal_moves:
+            self.reflect = True
+            return center
+        elif self.reflect:
+            mirror_move = self.mirror(game, self)
+            if mirror_move in legal_moves:
+                return mirror_move
+            else:
+                self.reflect = False
+        elif game.get_player_location(game.get_opponent(self)) == center and \
+                len(game.get_blank_spaces()) == (game.width * game.height) - 1:
+            i, j = center
+            restricted = set((i + 1, j + 2), (i + 1, j - 2), (i + 2, j + 1),
+                             (i + 2, j - 1), (i - 1, j + 2), (i - 1, j - 2),
+                             (i - 2, j + 1), (i - 2, j - 1))
+            open_book = set(legal_moves) - restricted
+            if open_book:
+                legal_moves = open_book
         else:
+            op_moves = set(game.get_legal_moves(game.get_opponent(self)))
+            my_moves = set(legal_moves)
+            same_moves = my_moves.intersection(op_moves)
+            if same_moves:
+                legal_moves = list(same_moves)
             next_move = legal_moves[0]
 
         method = self.minimax if self.method == 'minimax' else self.alphabeta
@@ -133,6 +189,7 @@ class CustomPlayer:
                     depth += 1
 
                 except Timeout:
+                    logging.info('timeout: returning')
                     return next_move
         else:
             try:
@@ -140,6 +197,7 @@ class CustomPlayer:
                 return next_move
 
             except Timeout:
+                logging.info('timeout: returning')
                 return next_move
 
     def minimax(self, game, depth, maximizing_player=True):
@@ -183,10 +241,16 @@ class CustomPlayer:
 
         for move in legal_moves:
             try:
+                future_game = game.forecast_move(move)
                 if depth == 1:
-                    score = self.score(game.forecast_move(move), self)
+                    ix = self.hash_function(future_game)
+                    score = self.hash_table[ix]
+                    hashed = score is not None
+                    if not hashed:
+                        self.hash_table[ix] = score
+                        score = self.score(future_game, self)
                 else:
-                    score, _ = self.minimax(game.forecast_move(move),
+                    score, _ = self.minimax(future_game,
                                             depth - 1, not maximizing_player)
                 if maximizing_player:
                     if score > best_score:
@@ -198,6 +262,7 @@ class CustomPlayer:
                         best_move = move
 
             except Timeout:
+                logging.info('timeout: returning')
                 return best_score, best_move
 
         return best_score, best_move
@@ -248,9 +313,19 @@ class CustomPlayer:
         if maximizing_player:
             value = (float("-inf"), (-1, -1))
             for move in legal_moves:
-                score = (self.score(game.forecast_move(move), self) if depth == 1
-                         else self.alphabeta(game.forecast_move(move), depth - 1,
-                         alpha, beta, not maximizing_player)[0], move)
+                future_game = game.forecast_move(move)
+                if depth == 1:
+                    ix = self.hash_function(future_game)
+                    score = self.hash_table[ix]
+                    hashed = score is not None
+                    if not hashed:
+                        self.hash_table[ix] = score
+                        score = self.score(future_game, self), move
+                    else:
+                        score = score, move
+                else:
+                    score = (self.alphabeta(future_game, depth - 1,
+                             alpha, beta, not maximizing_player)[0], move)
 
                 value = max([value, score], key=lambda x: x[0])
                 alpha = max(alpha, value[0])
@@ -258,14 +333,22 @@ class CustomPlayer:
                 if alpha >= beta:
                     break
 
-            return value
-
         else:
             value = (float("inf"), (-1, -1))
             for move in legal_moves:
-                score = (self.score(game.forecast_move(move), self) if depth == 1
-                         else self.alphabeta(game.forecast_move(move), depth - 1,
-                         alpha, beta, not maximizing_player)[0], move)
+                future_game = game.forecast_move(move)
+                if depth == 1:
+                    ix = self.hash_function(future_game)
+                    score = self.hash_table[ix]
+                    hashed = score is not None
+                    if not hashed:
+                        self.hash_table[ix] = score
+                        score = self.score(future_game, self), move
+                    else:
+                        score = score, move
+                else:
+                    score = (self.alphabeta(future_game, depth - 1,
+                             alpha, beta, not maximizing_player)[0], move)
                 value = min([value, score], key=lambda x: x[0])
                 beta = min(beta, value[0])
 

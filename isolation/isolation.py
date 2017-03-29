@@ -9,9 +9,16 @@ be available to project reviewers.
 """
 import random
 import timeit
+import logging
 from copy import copy
 
 TIME_LIMIT_MILLIS = 150
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+                    filename='performance.log',
+                    filemode='a+')
+logger = logging.getLogger('board')
 
 
 class Board(object):
@@ -322,7 +329,7 @@ class Board(object):
             game_copy = self.copy()
 
             move_start = time_millis()
-            time_left = lambda : time_limit - (time_millis() - move_start)
+            time_left = lambda: time_limit - (time_millis() - move_start)
             curr_move = self._active_player.get_move(
                 game_copy, legal_player_moves, time_left)
             move_end = time_left()
@@ -331,11 +338,14 @@ class Board(object):
                 curr_move = Board.NOT_MOVED
 
             if move_end < 0:
+                logging.info(move_history)
                 return self._inactive_player, move_history, "timeout"
 
             if curr_move not in legal_player_moves:
                 if len(legal_player_moves) > 0:
+                    logging.info(move_history)
                     return self._inactive_player, move_history, "forfeit"
+                logging.info(move_history)
                 return self._inactive_player, move_history, "illegal move"
 
             move_history.append(list(curr_move))
