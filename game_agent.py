@@ -7,6 +7,7 @@ You must test your agent's strength against a set of agents with known
 relative strength using tournament.py and include the results in your report.
 """
 import logging
+import numpy as np
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
@@ -18,6 +19,43 @@ logger = logging.getLogger('game_agent')
 class Timeout(Exception):
     """Subclass base exception for code clarity."""
     pass
+
+
+def negative_op(game, player):
+    op_moves = len(game.get_legal_moves(game.get_opponent(player)))
+
+    return -op_moves
+
+
+def conscious_chase(game, player):
+    op_moves = set(game.get_legal_moves(game.get_opponent(player)))
+    my_moves = set(game.get_legal_moves(player))
+    same_moves = my_moves.intersection(op_moves)
+
+    return (len(same_moves) + 1) / (len(my_moves) + 1)
+
+
+def chase(game, player):
+    op_moves = set(game.get_legal_moves(game.get_opponent(player)))
+    my_moves = set(game.get_legal_moves(player))
+    same_moves = my_moves.intersection(op_moves)
+
+    return len(same_moves)
+
+
+def considerate(game, player):
+    op_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    my_moves = len(game.get_legal_moves(player))
+    blank_spaces = len(game.get_blank_spaces())
+
+    return 2 * my_moves - 0.5 * blank_spaces * op_moves
+
+
+def op_aside(game, player):
+    op_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    my_moves = len(game.get_legal_moves(player))
+
+    return 2 * my_moves - op_moves
 
 
 def custom_score(game, player):
@@ -48,10 +86,7 @@ def custom_score(game, player):
     if game.is_winner(player):
         return float("inf")
 
-    op_moves = len(game.get_legal_moves(game.get_opponent(player)))
-    my_moves = len(game.get_legal_moves(player))
-
-    return 2 * my_moves - op_moves
+    return considerate(game, player) + 1
 
 
 class CustomPlayer:
@@ -94,7 +129,8 @@ class CustomPlayer:
         self.time_left = None
         self.TIMER_THRESHOLD = timeout
         self.reflect = False
-        self.hash_table = [None] * 509
+        self.PRIME = 1009
+        self.hash_table = None
 
     def mirror(self, game, player):
         opponent = game.get_opponent(player)
@@ -104,10 +140,7 @@ class CustomPlayer:
         return mirror_move
 
     def hash_function(self, game):
-        h = hash(game.to_string())
-        ix = h % 509
-
-        return int(ix)
+        return game.hash() % self.PRIME
 
     def get_move(self, game, legal_moves, time_left):
         """Search for the best move from the available legal moves and return a
@@ -146,7 +179,11 @@ class CustomPlayer:
 
         self.time_left = time_left
         center = (game.width - 1) // 2, (game.height - 1) // 2
+        clean_board = (game.height) * (game.width)
+        blanks = len(game.get_blank_spaces())
 
+        if self.hash_table is None:
+            self.hash_table = np.zeros((clean_board, self.PRIME))
         if not legal_moves:
             return (-1, -1)
         elif len(legal_moves) == 1:
@@ -161,7 +198,7 @@ class CustomPlayer:
             else:
                 self.reflect = False
         elif game.get_player_location(game.get_opponent(self)) == center and \
-                len(game.get_blank_spaces()) == (game.width * game.height) - 1:
+                blanks == clean_board - 1:
             i, j = center
             restricted = set((i + 1, j + 2), (i + 1, j - 2), (i + 2, j + 1),
                              (i + 2, j - 1), (i - 1, j + 2), (i - 1, j - 2),
@@ -170,11 +207,6 @@ class CustomPlayer:
             if open_book:
                 legal_moves = open_book
         else:
-            op_moves = set(game.get_legal_moves(game.get_opponent(self)))
-            my_moves = set(legal_moves)
-            same_moves = my_moves.intersection(op_moves)
-            if same_moves:
-                legal_moves = list(same_moves)
             next_move = legal_moves[0]
 
         method = self.minimax if self.method == 'minimax' else self.alphabeta
@@ -189,7 +221,6 @@ class CustomPlayer:
                     depth += 1
 
                 except Timeout:
-                    logging.info('timeout: returning')
                     return next_move
         else:
             try:
@@ -197,7 +228,6 @@ class CustomPlayer:
                 return next_move
 
             except Timeout:
-                logging.info('timeout: returning')
                 return next_move
 
     def minimax(self, game, depth, maximizing_player=True):
@@ -242,13 +272,15 @@ class CustomPlayer:
         for move in legal_moves:
             try:
                 future_game = game.forecast_move(move)
+                blanks = len(future_game.get_blank_spaces()) - 1
                 if depth == 1:
                     ix = self.hash_function(future_game)
-                    score = self.hash_table[ix]
-                    hashed = score is not None
+                    score = self.hash_table[blanks][ix]
+                    hashed = score is True
+
                     if not hashed:
-                        self.hash_table[ix] = score
                         score = self.score(future_game, self)
+                        self.hash_table[blanks][ix] = score
                 else:
                     score, _ = self.minimax(future_game,
                                             depth - 1, not maximizing_player)
@@ -262,7 +294,6 @@ class CustomPlayer:
                         best_move = move
 
             except Timeout:
-                logging.info('timeout: returning')
                 return best_score, best_move
 
         return best_score, best_move
@@ -314,13 +345,14 @@ class CustomPlayer:
             value = (float("-inf"), (-1, -1))
             for move in legal_moves:
                 future_game = game.forecast_move(move)
+                blanks = len(future_game.get_blank_spaces()) - 1
                 if depth == 1:
                     ix = self.hash_function(future_game)
-                    score = self.hash_table[ix]
-                    hashed = score is not None
+                    score = self.hash_table[blanks][ix]
+                    hashed = score is True
                     if not hashed:
-                        self.hash_table[ix] = score
                         score = self.score(future_game, self), move
+                        self.hash_table[blanks][ix] = score[0]
                     else:
                         score = score, move
                 else:
@@ -337,13 +369,14 @@ class CustomPlayer:
             value = (float("inf"), (-1, -1))
             for move in legal_moves:
                 future_game = game.forecast_move(move)
+                blanks = len(future_game.get_blank_spaces()) - 1
                 if depth == 1:
                     ix = self.hash_function(future_game)
-                    score = self.hash_table[ix]
-                    hashed = score is not None
+                    score = self.hash_table[blanks][ix]
+                    hashed = score is True
                     if not hashed:
-                        self.hash_table[ix] = score
                         score = self.score(future_game, self), move
+                        self.hash_table[blanks][ix] = score[0]
                     else:
                         score = score, move
                 else:

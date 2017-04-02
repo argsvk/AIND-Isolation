@@ -117,7 +117,7 @@ def play_round(agents, num_matches):
     wins = 0.
     total = 0.
 
-    logging.info("\nPlaying Matches:")
+    logger.info("\nPlaying Matches:")
     print("\nPlaying Matches:")
     print("----------")
 
@@ -125,7 +125,7 @@ def play_round(agents, num_matches):
 
         counts = {agent_1.player: 0., agent_2.player: 0.}
         names = [agent_1.name, agent_2.name]
-        logging.info("  Match {}: {!s:^11} vs {!s:^11}".format(idx + 1, *names))
+        logger.info("  Match {}: {!s:^11} vs {!s:^11}".format(idx + 1, *names))
         print("  Match {}: {!s:^11} vs {!s:^11}".format(idx + 1, *names), end=' ')
 
         # Each player takes a turn going first
@@ -137,7 +137,7 @@ def play_round(agents, num_matches):
                 total += score_1 + score_2
 
         wins += counts[agent_1.player]
-        logging.info("\tResult: {} to {}".format(int(counts[agent_1.player]),
+        logger.info("\tResult: {} to {}".format(int(counts[agent_1.player]),
                                                  int(counts[agent_2.player])))
         print("\tResult: {} to {}".format(int(counts[agent_1.player]),
                                           int(counts[agent_2.player])))
@@ -177,7 +177,7 @@ def main():
     for agentUT in test_agents:
         print("")
         print("*************************")
-        logging.info("{:^25}".format("Evaluating: " + agentUT.name))
+        logger.info("{:^25}".format("Evaluating: " + agentUT.name))
         print("{:^25}".format("Evaluating: " + agentUT.name))
         print("*************************")
 
@@ -186,7 +186,7 @@ def main():
 
         print("\n\nResults:")
         print("----------")
-        logging.info('Results: {!s:<15}{:>10.2f}%'.format(agentUT.name, win_ratio))
+        logger.info('Results: {!s:<15}{:>10.2f}%'.format(agentUT.name, win_ratio))
         print("{!s:<15}{:>10.2f}%".format(agentUT.name, win_ratio))
 
 
