@@ -94,4 +94,9 @@ ENV/
 # Rope project settings
 .ropeproject
 
+# Office files
+*.ods
+*.docx
+*.odt
+
 # End of https://www.gitignore.io/api/python

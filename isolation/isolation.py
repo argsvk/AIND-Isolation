@@ -319,7 +319,7 @@ class Board(object):
             move history, and a string indicating the reason for losing
             (e.g., timeout or invalid move).
         """
-        self.move_history = []
+        move_history = []
 
         time_millis = lambda: 1000 * timeit.default_timer()
 
@@ -338,16 +338,16 @@ class Board(object):
                 curr_move = Board.NOT_MOVED
 
             if move_end < 0:
-                logger.info(self.move_history)
-                return self._inactive_player, self.move_history, "timeout"
+                logger.info(move_history)
+                return self._inactive_player, move_history, "timeout"
 
             if curr_move not in legal_player_moves:
                 if len(legal_player_moves) > 0:
-                    logger.info(self.move_history)
-                    return self._inactive_player, self.move_history, "forfeit"
-                logger.info(self.move_history)
-                return self._inactive_player, self.move_history, "illegal move"
+                    logger.info(move_history)
+                    return self._inactive_player, move_history, "forfeit"
+                logger.info(move_history)
+                return self._inactive_player, move_history, "illegal move"
 
-            self.move_history.append(list(curr_move))
+            move_history.append(list(curr_move))
 
             self.apply_move(curr_move)

@@ -138,7 +138,7 @@ def play_round(agents, num_matches):
 
         wins += counts[agent_1.player]
         logger.info("\tResult: {} to {}".format(int(counts[agent_1.player]),
-                                                 int(counts[agent_2.player])))
+                                                int(counts[agent_2.player])))
         print("\tResult: {} to {}".format(int(counts[agent_1.player]),
                                           int(counts[agent_2.player])))
 

@@ -32,7 +32,7 @@ def conscious_chase(game, player):
     my_moves = set(game.get_legal_moves(player))
     same_moves = my_moves.intersection(op_moves)
 
-    return (len(same_moves) + 1) / (len(my_moves) + 1)
+    return len(my_moves) - len(same_moves)
 
 
 def chase(game, player):
@@ -56,6 +56,31 @@ def op_aside(game, player):
     my_moves = len(game.get_legal_moves(player))
 
     return 2 * my_moves - op_moves
+
+
+def center_routine(game, player):
+    center = (game.width - 1) // 2, (game.height - 1) // 2
+    op_loc = game.get_player_location(game.get_opponent(player))
+    player_loc = game.get_player_location()
+
+    i, j = center
+    restricted = set((i + 1, j + 2), (i + 1, j - 2), (i + 2, j + 1),
+                     (i + 2, j - 1), (i - 1, j + 2), (i - 1, j - 2),
+                     (i - 2, j + 1), (i - 2, j - 1))
+
+    if center == player_loc:
+        return 100.0
+    elif op_loc in restricted:
+        mirror_move = player.mirror(game, player)
+        if player.is_mirror(op_loc, player_loc):
+            return 100.0
+    elif op_loc == center:
+        if player_loc in restricted:
+            return 0.
+        else:
+            return 100.0
+
+    return 0.
 
 
 def custom_score(game, player):
@@ -86,7 +111,22 @@ def custom_score(game, player):
     if game.is_winner(player):
         return float("inf")
 
-    return considerate(game, player) + 1
+    blanks = len(game.get_blank_spaces()) - 1
+
+    ix = player.hash_function(game)
+    score = player.hash_table[blanks][ix]
+    hashed = score is True
+
+    if not hashed:
+        if game.move_count < 3:
+            score = center_routine(game, player)
+        if not score:
+            # score = op_aside(game, player) + 1.0
+            score = negative_op(game, player) + 1.0
+            player.hash_table[blanks][ix] = score
+        return score
+    else:
+        return player.hash_table[blanks][ix]
 
 
 class CustomPlayer:
@@ -132,12 +172,11 @@ class CustomPlayer:
         self.PRIME = 1009
         self.hash_table = None
 
-    def mirror(self, game, player):
-        opponent = game.get_opponent(player)
-        i, j = game.get_player_location(opponent)
+    def is_mirror(self, game, op_loc, player_loc):
+        i, j = op_loc
         mirror_move = (game.height - 1 - i, game.width - 1 - j)
 
-        return mirror_move
+        return player_loc == mirror_move
 
     def hash_function(self, game):
         return game.hash() % self.PRIME
@@ -178,34 +217,14 @@ class CustomPlayer:
         """
 
         self.time_left = time_left
-        center = (game.width - 1) // 2, (game.height - 1) // 2
-        clean_board = (game.height) * (game.width)
-        blanks = len(game.get_blank_spaces())
+        board_size = game.width * game.height
 
         if self.hash_table is None:
-            self.hash_table = np.zeros((clean_board, self.PRIME))
+            self.hash_table = np.zeros((board_size, self.PRIME))
         if not legal_moves:
             return (-1, -1)
         elif len(legal_moves) == 1:
             return legal_moves[0]
-        elif center in legal_moves:
-            self.reflect = True
-            return center
-        elif self.reflect:
-            mirror_move = self.mirror(game, self)
-            if mirror_move in legal_moves:
-                return mirror_move
-            else:
-                self.reflect = False
-        elif game.get_player_location(game.get_opponent(self)) == center and \
-                blanks == clean_board - 1:
-            i, j = center
-            restricted = set((i + 1, j + 2), (i + 1, j - 2), (i + 2, j + 1),
-                             (i + 2, j - 1), (i - 1, j + 2), (i - 1, j - 2),
-                             (i - 2, j + 1), (i - 2, j - 1))
-            open_book = set(legal_moves) - restricted
-            if open_book:
-                legal_moves = open_book
         else:
             next_move = legal_moves[0]
 
@@ -271,18 +290,10 @@ class CustomPlayer:
 
         for move in legal_moves:
             try:
-                future_game = game.forecast_move(move)
-                blanks = len(future_game.get_blank_spaces()) - 1
                 if depth == 1:
-                    ix = self.hash_function(future_game)
-                    score = self.hash_table[blanks][ix]
-                    hashed = score is True
-
-                    if not hashed:
-                        score = self.score(future_game, self)
-                        self.hash_table[blanks][ix] = score
+                    score = self.score(game.forecast_move(move), self)
                 else:
-                    score, _ = self.minimax(future_game,
+                    score, _ = self.minimax(game.forecast_move(move),
                                             depth - 1, not maximizing_player)
                 if maximizing_player:
                     if score > best_score:
@@ -344,19 +355,10 @@ class CustomPlayer:
         if maximizing_player:
             value = (float("-inf"), (-1, -1))
             for move in legal_moves:
-                future_game = game.forecast_move(move)
-                blanks = len(future_game.get_blank_spaces()) - 1
                 if depth == 1:
-                    ix = self.hash_function(future_game)
-                    score = self.hash_table[blanks][ix]
-                    hashed = score is True
-                    if not hashed:
-                        score = self.score(future_game, self), move
-                        self.hash_table[blanks][ix] = score[0]
-                    else:
-                        score = score, move
+                    score = self.score(game.forecast_move(move), self), move
                 else:
-                    score = (self.alphabeta(future_game, depth - 1,
+                    score = (self.alphabeta(game.forecast_move(move), depth - 1,
                              alpha, beta, not maximizing_player)[0], move)
 
                 value = max([value, score], key=lambda x: x[0])
@@ -368,19 +370,10 @@ class CustomPlayer:
         else:
             value = (float("inf"), (-1, -1))
             for move in legal_moves:
-                future_game = game.forecast_move(move)
-                blanks = len(future_game.get_blank_spaces()) - 1
                 if depth == 1:
-                    ix = self.hash_function(future_game)
-                    score = self.hash_table[blanks][ix]
-                    hashed = score is True
-                    if not hashed:
-                        score = self.score(future_game, self), move
-                        self.hash_table[blanks][ix] = score[0]
-                    else:
-                        score = score, move
+                    score = self.score(game.forecast_move(move), self), move
                 else:
-                    score = (self.alphabeta(future_game, depth - 1,
+                    score = (self.alphabeta(game.forecast_move(move), depth - 1,
                              alpha, beta, not maximizing_player)[0], move)
                 value = min([value, score], key=lambda x: x[0])
                 beta = min(beta, value[0])
